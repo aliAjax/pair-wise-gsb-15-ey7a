@@ -6,6 +6,43 @@ test.describe.serial('FlowDesk 完整链路',()=>{
  test('发布后列表和总览同步',async({page})=>{await page.goto('/workflows/wf-2');await page.getByTestId('publish-button').click();await expect(page.getByRole('status')).toContainText('发布成功');await page.getByRole('link',{name:'流程管理'}).click();const row=page.getByTestId('workflow-row').filter({hasText:'采购合同审批'});await expect(row).toContainText('已发布');await expect(row).toContainText('v3');await page.getByRole('link',{name:'总览'}).click();await expect(page.getByTestId('kpi-grid')).toBeVisible();});
  test('异常实例详情、时间线与当前节点高亮',async({page})=>{await page.goto('/monitor');await page.getByRole('button',{name:'异常',exact:true}).click();await page.getByTestId('instance-row').first().click();await expect(page.getByTestId('instance-detail')).toBeVisible();await expect(page.getByTestId('execution-timeline')).toContainText('提交申请');await expect(page.locator('.runtime-highlight')).toHaveCount(1);});
  test('版本比较并恢复历史版本',async({page})=>{await page.goto('/workflows/wf-2/versions');await expect(page.getByTestId('version-compare')).toContainText('新增节点');await page.getByTestId('restore-version').click();await expect(page).toHaveURL(/\/workflows\/wf-2$/);await expect(page.getByRole('status')).toContainText('已恢复');await expect(page.getByTestId('flow-canvas')).toBeVisible();});
+ test('异常实例重试闭环：角色门禁、单例重试、快照隔离与刷新一致',async({page})=>{
+  await page.goto('/monitor');await page.getByRole('button',{name:'异常',exact:true}).click();await page.getByTestId('instance-row').first().click();
+  await expect(page.getByTestId('instance-detail')).toBeVisible();await expect(page.getByTestId('retry-owner')).toHaveText('部门负责人');
+  // 只有停滞节点的责任角色能发起重试
+  await expect(page.getByTestId('retry-start')).toBeEnabled();
+  await page.getByLabel('当前角色').selectOption('系统管理员');
+  await expect(page.getByTestId('retry-start')).toBeDisabled();await expect(page.getByTestId('retry-hint')).toContainText('部门负责人');
+  await page.getByLabel('当前角色').selectOption('部门负责人');
+  // 同一实例同一节点同时只能有一个重试
+  await page.getByTestId('retry-start').click();
+  await expect(page.getByTestId('retry-active')).toContainText('第 1 次重试进行中');await expect(page.getByTestId('retry-start')).toHaveCount(0);
+  // 重试开始后，编辑并发布流程不改变该实例的节点快照
+  const before=await page.locator('.runtime-canvas .flow-node').count();
+  await page.goto('/workflows/wf-1');
+  await page.getByTestId('canvas-node-condition').click();await page.getByLabel('条件字段').selectOption('amount');await page.getByLabel('条件比较值').fill('5000');await page.getByTestId('save-node-config').click();
+  await page.getByTestId('publish-button').click();await expect(page.getByRole('status')).toContainText('发布成功');
+  await page.locator('button.palette.approval').click();
+  await page.goto('/monitor');await page.getByRole('button',{name:'异常',exact:true}).click();await page.getByTestId('instance-row').first().click();
+  await expect(page.locator('.runtime-canvas .flow-node')).toHaveCount(before);
+  await expect(page.locator('.runtime-canvas [data-node-type="condition"]')).toHaveClass(/unconfigured/);
+  await expect(page.getByTestId('retry-active')).toContainText('第 1 次重试进行中');
+  // 失败：保留原异常并追加尝试记录，顺序递增
+  await page.getByTestId('retry-fail').click();
+  await expect(page.getByTestId('retry-attempt')).toHaveCount(1);await expect(page.getByTestId('execution-timeline')).toContainText('第 1 次重试失败');await expect(page.getByTestId('retry-start')).toBeVisible();
+  await page.getByTestId('retry-start').click();await page.getByTestId('retry-fail').click();
+  await expect(page.getByTestId('retry-attempt')).toHaveCount(2);await expect(page.getByTestId('retry-attempt').nth(1)).toContainText('第 2 次');
+  // 成功才能关闭实例
+  await page.getByTestId('retry-start').click();await page.getByTestId('retry-success').click();
+  await expect(page.getByTestId('retry-panel')).toHaveCount(0);await expect(page.getByTestId('retry-attempt')).toHaveCount(3);await expect(page.getByTestId('execution-timeline')).toContainText('实例关闭');
+  // 刷新后实例状态、节点快照和尝试顺序仍一致
+  await page.reload();await page.getByRole('button',{name:'已完成'}).click();await page.getByTestId('instance-row').first().click();
+  await expect(page.getByTestId('instance-detail')).toContainText('已完成');
+  await expect(page.getByTestId('retry-attempt')).toHaveCount(3);
+  await expect(page.getByTestId('retry-attempt').nth(0)).toContainText('第 1 次');await expect(page.getByTestId('retry-attempt').nth(0)).toContainText('失败');
+  await expect(page.getByTestId('retry-attempt').nth(2)).toContainText('第 3 次');await expect(page.getByTestId('retry-attempt').nth(2)).toContainText('成功');
+  await expect(page.locator('.runtime-canvas .flow-node')).toHaveCount(before);
+ });
 });
 
 test('1440px 桌面视觉与控制台验证',async({page})=>{

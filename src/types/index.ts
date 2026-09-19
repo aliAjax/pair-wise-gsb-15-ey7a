@@ -6,5 +6,7 @@ export interface FlowNode {id:string;type:NodeKind;position:{x:number;y:number};
 export interface FlowEdge {id:string;source:string;target:string;label?:string}
 export interface Version {version:number;createdAt:string;note:string;nodes:FlowNode[];edges:FlowEdge[]}
 export interface Workflow {id:string;name:string;domain:string;status:WorkflowStatus;version:number;editor:string;updatedAt:string;publishedAt?:string;abnormalCount:number;nodes:FlowNode[];edges:FlowEdge[];versions:Version[]}
-export interface Instance {id:string;workflowId:string;applicant:string;domain:string;currentNode:string;status:'abnormal'|'timeout'|'running'|'completed';submittedAt:string;duration:string;risk:'high'|'medium'|'low';timeline:{title:string;time:string;status:string}[]}
+export interface ActiveRetry{seq:number;node:string;role:string;operator:string;startedAt:string}
+export interface RetryAttempt extends ActiveRetry{finishedAt:string;result:'success'|'failed'}
+export interface Instance {id:string;workflowId:string;applicant:string;domain:string;currentNode:string;status:'abnormal'|'timeout'|'running'|'completed';submittedAt:string;duration:string;risk:'high'|'medium'|'low';snapshot:{nodes:FlowNode[];edges:FlowEdge[]};activeRetry:ActiveRetry|null;attempts:RetryAttempt[];timeline:{title:string;time:string;status:string}[]}
 export interface ValidationIssue {nodeId:string;level:'error'|'warning';message:string}
